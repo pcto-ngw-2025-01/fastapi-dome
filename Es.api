@@ -1,0 +1,48 @@
+from fastapi import FastAPI, HTTPException, Depends
+import mysql.connector
+
+app = FastAPI()
+
+def get_db():
+    return mysql.connector.connect(
+        host="your_host",
+        user="your_user",
+        password="your_password",
+        database="your_database"
+    )
+
+@app.post("/likes/", status_code=201)
+def add_like(user_id: int, post_id: int, conn=Depends(get_db)):
+    cursor = conn.cursor()
+
+    # Controlla se il like esiste già
+    cursor.execute("SELECT 1 FROM likes WHERE id_u = %s AND id_p = %s", (user_id, post_id))
+    if cursor.fetchone():
+        cursor.close()
+        conn.close()
+        raise HTTPException(status_code=400, detail="Hai già messo like")
+
+    # Inserisce il like
+    cursor.execute("INSERT INTO likes (id_u, id_p) VALUES (%s, %s)", (user_id, post_id))
+    conn.commit()
+    
+    cursor.close()
+    conn.close()
+    return {"message": "Like aggiunto con successo"}
+
+@app.get("/likes/{post_id}")
+def get_likes(post_id: int, conn=Depends(get_db)):
+    cursor = conn.cursor(dictionary=True)
+
+    cursor.execute("SELECT id_u FROM likes WHERE id_p = %s", (post_id,))
+    user_likes = cursor.fetchall()
+
+    cursor.close()
+    conn.close()
+
+    if not user_likes:
+        raise HTTPException(status_code=404, detail="Nessun like trovato per questo post")
+
+    user_ids = [like["id_u"] for like in user_likes]
+
+    return {"post_id": post_id, "user_ids": user_ids, "like_count": len(user_ids)}
